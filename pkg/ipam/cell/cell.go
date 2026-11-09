@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Authors of Cilium
+// This file was not reviewed by a human before submission
 
 package ipamcell
 
@@ -20,9 +21,12 @@ import (
 	"github.com/cilium/cilium/pkg/ipam"
 	ipamapi "github.com/cilium/cilium/pkg/ipam/api"
 	ipamMetadata "github.com/cilium/cilium/pkg/ipam/metadata"
+	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
 	"github.com/cilium/cilium/pkg/ipam/podippool"
 	k8sResources "github.com/cilium/cilium/pkg/k8s"
+	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	k8sClient "github.com/cilium/cilium/pkg/k8s/client"
+	"github.com/cilium/cilium/pkg/k8s/resource"
 	"github.com/cilium/cilium/pkg/k8s/watchers"
 	"github.com/cilium/cilium/pkg/metrics"
 	"github.com/cilium/cilium/pkg/mtu"
@@ -42,7 +46,7 @@ var Cell = cell.Module(
 
 	cell.Provide(newIPAddressManager),
 	cell.Provide(newIPAMAPIHandler),
-	cell.Provide(k8sResources.CiliumPodIPPoolResource),
+	cell.Provide(newCiliumPodIPPoolResource),
 	podippool.TableCell,
 
 	// IPAM metadata manager, determines which IPAM pool a pod should allocate from
@@ -51,6 +55,18 @@ var Cell = cell.Module(
 	// Multi-pool IPAM metrics
 	metrics.Metric(ipam.NewMultiPoolMetrics),
 )
+
+// newCiliumPodIPPoolResource creates the CiliumPodIPPool resource only when
+// multi-pool IPAM is in use. Creating the resource also registers the
+// CiliumPodIPPool CRD with the agent's CRD sync barrier, so creating it for
+// every IPAM mode would block agent startup on a CRD that only multi-pool
+// IPAM ever reads.
+func newCiliumPodIPPoolResource(params k8sResources.CiliumResourceParams, cfg *option.DaemonConfig) (resource.Resource[*v2.CiliumPodIPPool], error) {
+	if cfg.IPAM != ipamOption.IPAMMultiPool {
+		return nil, nil
+	}
+	return k8sResources.CiliumPodIPPoolResource(params)
+}
 
 type ipamConfig struct {
 	OnlyMasqueradeDefaultPool bool
